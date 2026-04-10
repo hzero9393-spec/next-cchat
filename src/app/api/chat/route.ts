@@ -1,5 +1,4 @@
 import { NextRequest } from "next/server";
-import ZAI from "z-ai-web-dev-sdk";
 
 const SYSTEM_PROMPT = `You are ZAI — a powerful AI personal assistant. You help users with:
 
@@ -14,6 +13,8 @@ Example: if user says "tum hi ho lagao", use query "Tum Hi Ho Arijit Singh" and 
 
 3. **General Chat**: For normal questions, just respond normally without any action tags.
 
+4. **Deep Research Mode**: When deep research is enabled, provide more detailed, thorough, and well-structured answers with citations, comparisons, and multiple perspectives. Go deeper into topics and provide actionable insights.
+
 RULES:
 - Always respond in the same language the user uses (Hindi, English, Hinglish)
 - Be friendly, helpful, and concise
@@ -23,36 +24,22 @@ RULES:
 - Never explain the action tags to the user
 - Use markdown for code blocks, lists, etc.`;
 
-// Pre-warm a singleton so first request is instant
-let cachedZAI: Awaited<ReturnType<typeof ZAI.create>> | null = null;
-let zaiReady: Promise<Awaited<ReturnType<typeof ZAI.create>>> | null = null;
+const DEEP_RESEARCH_PROMPT = `You are ZAI — an advanced AI research assistant in Deep Research mode. Provide extremely thorough, detailed, and well-structured responses.
 
-// Start warming in background immediately when module loads
-async function initZAI() {
-  const instance = await ZAI.create();
-  cachedZAI = instance;
-  return instance;
-}
-zaiReady = initZAI();
+For every question:
+- Break down into multiple sections with clear headings
+- Provide pros/cons when applicable
+- Include specific examples, data points, or references
+- Compare different approaches/perspectives
+- Give actionable recommendations
+- Use tables for comparisons when helpful
+- Cite sources or mention where to find more info
 
-async function getZAI(): Promise<Awaited<ReturnType<typeof ZAI.create>>> {
-  // Return cached if available
-  if (cachedZAI) return cachedZAI;
-  // Wait for pre-warm to finish
-  if (zaiReady) return zaiReady;
-  // Fallback: create new
-  return await ZAI.create();
-}
-
-// Fresh instance — used as retry when cached one goes stale
-async function freshZAI() {
-  cachedZAI = null;
-  zaiReady = null;
-  const instance = await ZAI.create();
-  cachedZAI = instance;
-  zaiReady = Promise.resolve(instance);
-  return instance;
-}
+RULES:
+- Always respond in the same language the user uses
+- Be thorough but organized
+- Use markdown extensively (headings, tables, lists, code blocks, bold, etc.)
+- Provide comprehensive answers that cover all angles`;
 
 export async function POST(req: NextRequest) {
   const json = (data: object, status = 200) =>
@@ -62,61 +49,117 @@ export async function POST(req: NextRequest) {
     });
 
   try {
-    const { messages } = await req.json();
+    const { messages, deepResearch } = await req.json();
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return json({ error: "Messages required" }, 400);
     }
 
-    const sdkMessages = [
-      { role: "assistant" as const, content: SYSTEM_PROMPT },
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return json({ error: "OpenAI API key not configured" }, 500);
+    }
+
+    const systemPrompt = deepResearch ? DEEP_RESEARCH_PROMPT : SYSTEM_PROMPT;
+    const model = deepResearch ? "gpt-4o" : "gpt-4o-mini";
+
+    const apiMessages = [
+      { role: "system" as const, content: systemPrompt },
       ...messages.map((m: { role: string; content: string }) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
     ];
 
-    // Try cached instance first with short timeout
-    let lastError: Error | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const zai = attempt === 0 ? await getZAI() : await freshZAI();
-        const completion = await Promise.race([
-          zai.chat.completions.create({
-            messages: sdkMessages,
-            thinking: { type: "disabled" },
-          }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("slow")), 10000)
-          ),
-        ]);
-        const content = completion.choices?.[0]?.message?.content;
-        if (content) return json({ content });
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error("Unknown");
-        // On 429 (rate limit) or stale connection, wait and retry
-        if (lastError.message.includes("429") || lastError.message === "slow") {
-          await new Promise((r) => setTimeout(r, 1500));
-          continue;
-        }
-        break;
-      }
+    // Call OpenAI API
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: apiMessages,
+        temperature: deepResearch ? 0.3 : 0.7,
+        max_tokens: deepResearch ? 4096 : 2048,
+        stream: true,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMsg =
+        errorData?.error?.message || `OpenAI API error: ${response.status}`;
+      console.error("OpenAI error:", errorMsg);
+      return json({ error: errorMsg }, response.status);
     }
 
-    // Final retry with fresh instance
-    const zai = await freshZAI();
-    const completion = await Promise.race([
-      zai.chat.completions.create({
-        messages: sdkMessages,
-        thinking: { type: "disabled" },
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("AI response timed out")), 20000)
-      ),
-    ]);
+    // Stream the response back
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
 
-    const content = completion.choices?.[0]?.message?.content || "";
-    if (!content) return json({ error: "Empty response" }, 500);
-    return json({ content });
+    const stream = new ReadableStream({
+      async start(controller) {
+        let fullContent = "";
+
+        try {
+          const reader = response.body?.getReader();
+          if (!reader) {
+            controller.close();
+            return;
+          }
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
+
+            for (const line of lines) {
+              const data = line.slice(6);
+              if (data === "[DONE]") break;
+
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  fullContent += content;
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
+                  );
+                }
+              } catch {
+                // skip invalid JSON chunks
+              }
+            }
+          }
+
+          // Send final message with full content
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ done: true, content: fullContent })}\n\n`
+            )
+          );
+          controller.close();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Stream error";
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`)
+          );
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("Chat API error:", msg);

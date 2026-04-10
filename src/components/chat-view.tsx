@@ -448,33 +448,93 @@ export function ChatView({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: allMessages }),
+          body: JSON.stringify({ messages: allMessages, deepResearch }),
           signal: abortRef.current.signal,
         });
 
-        const data = await res.json();
-        if (!res.ok || data.error) throw new Error(data.error || "AI error");
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `API error: ${res.status}`);
+        }
 
-        const aiContent = data.content || "";
-
-        // Save assistant message to API
-        const msgRes = await fetch(`/api/chats/${chatId}/messages`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ role: "assistant", content: aiContent }),
-        });
-
-        const msgData = await msgRes.json();
-        const aiMsg: Message = {
-          id: msgData.id || `ai-${Date.now()}`,
+        // Stream the response
+        const aiMsgId = `ai-${Date.now()}`;
+        const streamingMsg: Message = {
+          id: aiMsgId,
           role: "assistant",
-          content: aiContent,
+          content: "",
           created_at: new Date().toISOString(),
         };
-        setMessages((prev) => [...prev, aiMsg]);
+        setMessages((prev) => [...prev, streamingMsg]);
+
+        const contentType = res.headers.get("content-type") || "";
+        let fullContent = "";
+
+        if (contentType.includes("text/event-stream")) {
+          // SSE streaming
+          const reader = res.body?.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (reader) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const parsed = JSON.parse(line.slice(6));
+                if (parsed.error) {
+                  throw new Error(parsed.error);
+                }
+                if (parsed.done) {
+                  fullContent = parsed.content || fullContent;
+                } else if (parsed.content) {
+                  fullContent += parsed.content;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === aiMsgId
+                        ? { ...m, content: fullContent }
+                        : m
+                    )
+                  );
+                }
+              } catch (e) {
+                if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+                  // skip parse errors for incomplete chunks
+                }
+              }
+            }
+          }
+        } else {
+          // Non-streaming fallback
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          fullContent = data.content || "";
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === aiMsgId
+                ? { ...m, content: fullContent }
+                : m
+            )
+          );
+        }
+
+        // Save assistant message to DB
+        if (fullContent) {
+          fetch(`/api/chats/${chatId}/messages`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ role: "assistant", content: fullContent }),
+          }).catch(() => {});
+        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") return;
         const errMsg = err instanceof Error ? err.message : "Unknown error";
@@ -517,30 +577,71 @@ export function ChatView({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: chatHistory }),
+        body: JSON.stringify({ messages: chatHistory, deepResearch }),
       });
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "AI error");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "AI error");
+      }
 
-      const aiContent = data.content || "";
-
-      await fetch(`/api/chats/${chatId}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ role: "assistant", content: aiContent }),
-      });
-
-      const aiMsg: Message = {
-        id: `regen-${Date.now()}`,
+      const regenId = `regen-${Date.now()}`;
+      const streamingMsg: Message = {
+        id: regenId,
         role: "assistant",
-        content: aiContent,
+        content: "",
         created_at: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, aiMsg]);
+      setMessages((prev) => [...prev, streamingMsg]);
+
+      const contentType = res.headers.get("content-type") || "";
+      let fullContent = "";
+
+      if (contentType.includes("text/event-stream")) {
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              if (parsed.error) throw new Error(parsed.error);
+              if (parsed.done) fullContent = parsed.content || fullContent;
+              else if (parsed.content) {
+                fullContent += parsed.content;
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === regenId ? { ...m, content: fullContent } : m))
+                );
+              }
+            } catch {}
+          }
+        }
+      } else {
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        fullContent = data.content || "";
+        setMessages((prev) =>
+          prev.map((m) => (m.id === regenId ? { ...m, content: fullContent } : m))
+        );
+      }
+
+      if (fullContent) {
+        fetch(`/api/chats/${chatId}/messages`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ role: "assistant", content: fullContent }),
+        }).catch(() => {});
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : "Failed to regenerate";
       setError(errMsg);
