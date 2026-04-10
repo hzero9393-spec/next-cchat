@@ -108,9 +108,26 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const errorMsg =
-        errorData?.error?.message || `OpenAI API error: ${response.status}`;
-      console.error("OpenAI error:", errorMsg);
+      const rawMsg = errorData?.error?.message || `OpenAI API error: ${response.status}`;
+      console.error("OpenAI error:", rawMsg);
+
+      // Map common OpenAI errors to user-friendly messages
+      let errorMsg = rawMsg;
+      const msg = rawMsg.toLowerCase();
+      if (msg.includes("quota") || msg.includes("billing") || msg.includes("exceeded your current")) {
+        errorMsg = "OpenAI API quota exceeded. Please check your billing plan at platform.openai.com and add credits to continue using the chat.";
+      } else if (msg.includes("invalid api key") || msg.includes("incorrect api key") || msg.includes("authentication")) {
+        errorMsg = "Invalid OpenAI API key. Please update your OPENAI_API_KEY in the environment settings.";
+      } else if (msg.includes("rate limit") || msg.includes("too many requests")) {
+        errorMsg = "OpenAI rate limit reached. Please wait a moment and try again.";
+      } else if (msg.includes("model") && msg.includes("not found")) {
+        errorMsg = `The AI model '${model}' is not available. Please select a different model.`;
+      } else if (msg.includes("context length") || msg.includes("maximum context")) {
+        errorMsg = "Message too long for this model. Please start a new chat or shorten your message.";
+      } else if (msg.includes("server error") || msg.includes("500") || msg.includes("502") || msg.includes("503")) {
+        errorMsg = "OpenAI servers are currently busy. Please try again in a few moments.";
+      }
+
       return json({ error: errorMsg }, response.status);
     }
 

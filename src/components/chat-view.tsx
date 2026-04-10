@@ -734,8 +734,17 @@ export function ChatView({
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") return;
-        const errMsg = err instanceof Error ? err.message : "Unknown error";
-        setError(errMsg);
+        const rawErr = err instanceof Error ? err.message : "Unknown error";
+        // Clean up raw error for frontend display
+        let displayErr = rawErr;
+        if (rawErr.includes("quota") || rawErr.includes("billing") || rawErr.includes("exceeded your current")) {
+          displayErr = "AI quota exceeded — the OpenAI API credits have run out. Please ask the admin to add credits at platform.openai.com.";
+        } else if (rawErr.includes("rate limit") || rawErr.includes("429")) {
+          displayErr = "Rate limit reached. Please wait a few seconds and try again.";
+        } else if (rawErr.includes("timeout") || rawErr.includes("30")) {
+          displayErr = "Request timed out. The AI took too long to respond. Please try again.";
+        }
+        setError(displayErr);
       } finally {
         setIsLoading(false);
         abortRef.current = null;
@@ -1221,10 +1230,23 @@ export function ChatView({
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
                 className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-0"
               >
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
-                  <span>{error}</span>
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                  <div className="shrink-0 mt-0.5 w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                    <span className="text-red-500 text-xs font-bold">!</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-red-600 dark:text-red-400 text-sm font-medium">Something went wrong</p>
+                    <p className="text-red-500/80 text-sm mt-1 leading-relaxed">{error}</p>
+                  </div>
+                  <button
+                    onClick={() => setError("")}
+                    className="shrink-0 p-1 rounded-md hover:bg-red-500/10 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4 text-red-400" />
+                  </button>
                 </div>
               </motion.div>
             )}
