@@ -41,29 +41,29 @@ RULES:
 - Use markdown extensively (headings, tables, lists, code blocks, bold, etc.)
 - Provide comprehensive answers that cover all angles`;
 
-// Cerebras API models
-const CEREBRAS_MODELS = {
-  "llama-4-scout-17b-16e-instruct": {
+// Gemini models config
+const GEMINI_MODELS = {
+  "gemini-2.5-flash-preview-05-20": {
     label: "Deep Research",
-    max_tokens: 4096,
+    maxOutputTokens: 8192,
     temperature: 0.3,
     isDeep: true,
   },
-  "llama3.1-8b": {
+  "gemini-2.0-flash": {
     label: "Fast",
-    max_tokens: 2048,
+    maxOutputTokens: 2048,
     temperature: 0.7,
     isDeep: false,
   },
-  "llama3.1-70b": {
-    label: "Advanced",
-    max_tokens: 4096,
-    temperature: 0.5,
-    isDeep: true,
+  "gemini-2.0-flash-lite": {
+    label: "Lite",
+    maxOutputTokens: 1024,
+    temperature: 0.8,
+    isDeep: false,
   },
 } as const;
 
-type ValidModel = keyof typeof CEREBRAS_MODELS;
+type ValidModel = keyof typeof GEMINI_MODELS;
 
 export async function POST(req: NextRequest) {
   const json = (data: object, status = 200) =>
@@ -78,81 +78,74 @@ export async function POST(req: NextRequest) {
       return json({ error: "Messages required" }, 400);
     }
 
-    const apiKey = process.env.CEREBRAS_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      console.error("CEREBRAS_API_KEY not found. Available env vars:", Object.keys(process.env).filter(k => k.includes('CERE') || k.includes('API') || k.includes('KEY')).join(', '));
-      return json({ error: "Cerebras API key not configured. Please add CEREBRAS_API_KEY to your environment variables." }, 500);
+      return json({ error: "Gemini API key not configured" }, 500);
     }
 
-    // Resolve model: explicit model param takes priority, then deepResearch fallback
-    const validModelKeys = Object.keys(CEREBRAS_MODELS) as ValidModel[];
+    // Resolve model
+    const validModelKeys = Object.keys(GEMINI_MODELS) as ValidModel[];
     const model: ValidModel =
       requestedModel && validModelKeys.includes(requestedModel)
         ? (requestedModel as ValidModel)
         : deepResearch
-          ? "llama-4-scout-17b-16e-instruct"
-          : "llama3.1-8b";
+          ? "gemini-2.5-flash-preview-05-20"
+          : "gemini-2.0-flash";
 
-    const modelInfo = CEREBRAS_MODELS[model];
-
-    // System prompt: deep model or deepResearch → DEEP_RESEARCH_PROMPT
+    const modelInfo = GEMINI_MODELS[model];
     const useDeepPrompt = modelInfo.isDeep || deepResearch === true;
     const systemPrompt = useDeepPrompt ? DEEP_RESEARCH_PROMPT : SYSTEM_PROMPT;
+    const { maxOutputTokens, temperature } = modelInfo;
 
-    const { max_tokens, temperature } = modelInfo;
+    // Convert messages to Gemini format
+    // Gemini uses "user" and "model" roles, system instruction is separate
+    const contents = messages
+      .map((m: { role: string; content: string }) => ({
+        role: m.role === "assistant" ? ("model" as const) : ("user" as const),
+        parts: [{ text: m.content }],
+      }));
 
-    const apiMessages = [
-      { role: "system" as const, content: systemPrompt },
-      ...messages.map((m: { role: string; content: string }) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
-    ];
+    // Call Gemini streaming API
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-    // Call Cerebras API (OpenAI-compatible)
-    const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+    const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model,
-        messages: apiMessages,
-        temperature,
-        max_tokens,
-        stream: true,
+        contents,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          temperature,
+          maxOutputTokens,
+        },
       }),
-      signal: AbortSignal.timeout(60000), // Cerebras is fast but allow 60s
+      signal: AbortSignal.timeout(60000),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const rawMsg =
-        errorData?.error?.message || `Cerebras API error: ${response.status}`;
-      console.error("Cerebras error:", rawMsg);
+        errorData?.error?.message || `Gemini API error: ${response.status}`;
+      console.error("Gemini error:", rawMsg);
 
-      // Map common errors to user-friendly messages
       let errorMsg = rawMsg;
       const msg = rawMsg.toLowerCase();
       if (msg.includes("quota") || msg.includes("billing") || msg.includes("exceeded")) {
-        errorMsg = "Cerebras API quota exceeded. Please check your plan at cloud.cerebras.ai and add credits.";
-      } else if (msg.includes("invalid api key") || msg.includes("unauthorized") || msg.includes("authentication")) {
-        errorMsg = "Invalid Cerebras API key. Please update your CEREBRAS_API_KEY in the environment settings.";
-      } else if (msg.includes("rate limit") || msg.includes("too many requests")) {
-        errorMsg = "Cerebras rate limit reached. Please wait a moment and try again.";
-      } else if (msg.includes("model") && msg.includes("not found")) {
-        errorMsg = `The AI model '${model}' is not available. Please select a different model.`;
-      } else if (msg.includes("context length") || msg.includes("maximum context")) {
-        errorMsg = "Message too long for this model. Please start a new chat or shorten your message.";
-      } else if (msg.includes("server error") || msg.includes("500") || msg.includes("502") || msg.includes("503")) {
-        errorMsg = "Cerebras servers are currently busy. Please try again in a few moments.";
+        errorMsg = "Gemini API quota exceeded. Please check your plan at aistudio.google.com.";
+      } else if (msg.includes("api key") || msg.includes("invalid") || msg.includes("unauthorized")) {
+        errorMsg = "Invalid Gemini API key. Please update your GEMINI_API_KEY.";
+      } else if (msg.includes("rate limit") || msg.includes("429") || msg.includes("resource exhausted")) {
+        errorMsg = "Gemini rate limit reached. Please wait a moment and try again.";
+      } else if (msg.includes("safety") || msg.includes("blocked")) {
+        errorMsg = "Response blocked by Gemini safety filters. Please rephrase your question.";
+      } else if (msg.includes("server error") || msg.includes("500") || msg.includes("503")) {
+        errorMsg = "Gemini servers are busy. Please try again in a few moments.";
       }
 
       return json({ error: errorMsg }, response.status);
     }
 
-    // Stream the response back
+    // Stream the response back in our format
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
@@ -180,11 +173,12 @@ export async function POST(req: NextRequest) {
 
               try {
                 const parsed = JSON.parse(data);
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  fullContent += content;
+                // Gemini SSE format: { candidates: [{ content: { parts: [{ text }] } }] }
+                const text = parsed?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                  fullContent += text;
                   controller.enqueue(
-                    encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
+                    encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`)
                   );
                 }
               } catch {
@@ -193,7 +187,7 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Send final message with full content
+          // Send final message
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({ done: true, content: fullContent })}\n\n`

@@ -183,21 +183,21 @@ interface DashboardViewProps {
 
 const MODELS: ModelOption[] = [
   {
-    id: "llama-4-scout-17b-16e-instruct",
-    name: "Llama 4 Scout",
+    id: "gemini-2.5-flash-preview-05-20",
+    name: "Gemini 2.5 Flash",
     description: "Deep Research",
     icon: <Brain className="w-3.5 h-3.5" />,
   },
   {
-    id: "llama3.1-8b",
-    name: "Llama 3.1 8B",
+    id: "gemini-2.0-flash",
+    name: "Gemini 2.0 Flash",
     description: "Fast",
     icon: <Zap className="w-3.5 h-3.5" />,
   },
   {
-    id: "llama3.1-70b",
-    name: "Llama 3.1 70B",
-    description: "Advanced",
+    id: "gemini-2.0-flash-lite",
+    name: "Gemini 2.0 Lite",
+    description: "Lite",
     icon: <Sparkles className="w-3.5 h-3.5" />,
   },
 ];
@@ -1308,7 +1308,7 @@ export function DashboardView({
   const [isCreating, setIsCreating] = useState(false);
 
   // Model selector
-  const [selectedModel, setSelectedModel] = useState("llama3.1-8b");
+  const [selectedModel, setSelectedModel] = useState("gemini-2.0-flash");
 
   // Folders
   const [folders, setFolders] = useState<FolderItem[]>([]);
@@ -2217,7 +2217,7 @@ export function DashboardView({
               <ChatView
                 chatId={selectedChatId}
                 token={token}
-                deepResearch={selectedModel === "llama-4-scout-17b-16e-instruct"}
+                deepResearch={selectedModel === "gemini-2.5-flash-preview-05-20"}
                 selectedModel={selectedModel}
                 templatePrompt={templatePrompt}
                 onBack={() => {

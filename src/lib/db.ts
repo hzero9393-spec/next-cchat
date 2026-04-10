@@ -167,7 +167,7 @@ export async function initDb() {
     `ALTER TABLE users ADD COLUMN is_pro INTEGER DEFAULT 0`,
     `ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0`,
     `ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''`,
-    `ALTER TABLE messages ADD COLUMN model TEXT DEFAULT 'llama3.1-8b'`,
+    `ALTER TABLE messages ADD COLUMN model TEXT DEFAULT 'gemini-2.0-flash'`,
     `ALTER TABLE messages ADD COLUMN image_url TEXT`,
     `ALTER TABLE announcements ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))`,
   ];

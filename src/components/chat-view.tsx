@@ -87,21 +87,21 @@ export interface ChatViewProps {
 }
 
 const MODEL_LABELS: Record<string, string> = {
-  "llama-4-scout-17b-16e-instruct": "Deep Research",
-  "llama3.1-70b": "Advanced",
-  "llama3.1-8b": "Fast",
+  "gemini-2.5-flash-preview-05-20": "Deep Research",
+  "gemini-2.0-flash": "Fast",
+  "gemini-2.0-flash-lite": "Lite",
 };
 
 const MODEL_COLORS: Record<string, string> = {
-  "llama-4-scout-17b-16e-instruct": "border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400",
-  "llama3.1-70b": "border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  "llama3.1-8b": "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  "gemini-2.5-flash-preview-05-20": "border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  "gemini-2.0-flash": "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  "gemini-2.0-flash-lite": "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
 };
 
 function resolveModel(props: ChatViewProps): string {
   if (props.selectedModel) return props.selectedModel;
-  if (props.deepResearch) return "llama-4-scout-17b-16e-instruct";
-  return "llama3.1-8b";
+  if (props.deepResearch) return "gemini-2.5-flash-preview-05-20";
+  return "gemini-2.0-flash";
 }
 
 // ============ COPY BUTTON ============
@@ -643,7 +643,7 @@ export function ChatView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: allMessages,
-            deepResearch: model === "llama-4-scout-17b-16e-instruct",
+            deepResearch: model === "gemini-2.5-flash-preview-05-20",
             model,
           }),
           signal: abortRef.current.signal,
@@ -738,7 +738,7 @@ export function ChatView({
         // Clean up raw error for frontend display
         let displayErr = rawErr;
         if (rawErr.includes("quota") || rawErr.includes("billing") || rawErr.includes("exceeded")) {
-          displayErr = "AI quota exceeded — the Cerebras API credits have run out. Please ask the admin to add credits at cloud.cerebras.ai.";
+          displayErr = "AI quota exceeded — the Gemini API free limit has been reached. Please wait or ask admin to upgrade at aistudio.google.com.";
         } else if (rawErr.includes("rate limit") || rawErr.includes("429")) {
           displayErr = "Rate limit reached. Please wait a few seconds and try again.";
         } else if (rawErr.includes("timeout") || rawErr.includes("timed out")) {
@@ -785,7 +785,7 @@ export function ChatView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: chatHistory,
-          deepResearch: model === "llama-4-scout-17b-16e-instruct",
+          deepResearch: model === "gemini-2.5-flash-preview-05-20",
           model,
         }),
       });
@@ -1071,7 +1071,7 @@ export function ChatView({
       : null;
 
   const modelLabel = MODEL_LABELS[model] || model;
-  const modelColor = MODEL_COLORS[model] || MODEL_COLORS["llama3.1-8b"];
+  const modelColor = MODEL_COLORS[model] || MODEL_COLORS["gemini-2.0-flash"];
 
   // ============ RENDER ============
 
@@ -1111,7 +1111,7 @@ export function ChatView({
               variant="outline"
               className={`shrink-0 gap-1 text-[11px] ${modelColor}`}
             >
-              {model === "llama-4-scout-17b-16e-instruct" ? (
+              {model === "gemini-2.5-flash-preview-05-20" ? (
                 <Brain className="w-3 h-3" />
               ) : (
                 <Sparkles className="w-3 h-3" />
@@ -1205,7 +1205,7 @@ export function ChatView({
                 Start a conversation
               </h2>
               <p className="text-sm text-muted-foreground max-w-sm">
-                {model === "llama-4-scout-17b-16e-instruct"
+                {model === "gemini-2.5-flash-preview-05-20"
                   ? "Deep Research mode is on. Ask complex questions for thorough analysis."
                   : "Type a message below to start chatting with ZAI Assistant."}
               </p>
@@ -1330,7 +1330,7 @@ export function ChatView({
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  model === "llama-4-scout-17b-16e-instruct"
+                  model === "gemini-2.5-flash-preview-05-20"
                     ? "Ask a complex question for deep research..."
                     : "Type your message..."
                 }
