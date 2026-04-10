@@ -41,6 +41,30 @@ RULES:
 - Use markdown extensively (headings, tables, lists, code blocks, bold, etc.)
 - Provide comprehensive answers that cover all angles`;
 
+// Cerebras API models
+const CEREBRAS_MODELS = {
+  "llama-4-scout-17b-16e-instruct": {
+    label: "Deep Research",
+    max_tokens: 4096,
+    temperature: 0.3,
+    isDeep: true,
+  },
+  "llama3.1-8b": {
+    label: "Fast",
+    max_tokens: 2048,
+    temperature: 0.7,
+    isDeep: false,
+  },
+  "llama3.1-70b": {
+    label: "Advanced",
+    max_tokens: 4096,
+    temperature: 0.5,
+    isDeep: true,
+  },
+} as const;
+
+type ValidModel = keyof typeof CEREBRAS_MODELS;
+
 export async function POST(req: NextRequest) {
   const json = (data: object, status = 200) =>
     new Response(JSON.stringify(data), {
@@ -54,32 +78,27 @@ export async function POST(req: NextRequest) {
       return json({ error: "Messages required" }, 400);
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.CEREBRAS_API_KEY;
     if (!apiKey) {
-      return json({ error: "OpenAI API key not configured" }, 500);
+      return json({ error: "Cerebras API key not configured" }, 500);
     }
 
     // Resolve model: explicit model param takes priority, then deepResearch fallback
-    const validModels = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"] as const;
-    type ValidModel = (typeof validModels)[number];
+    const validModelKeys = Object.keys(CEREBRAS_MODELS) as ValidModel[];
     const model: ValidModel =
-      requestedModel && validModels.includes(requestedModel)
+      requestedModel && validModelKeys.includes(requestedModel)
         ? (requestedModel as ValidModel)
         : deepResearch
-          ? "gpt-4o"
-          : "gpt-4o-mini";
+          ? "llama-4-scout-17b-16e-instruct"
+          : "llama3.1-8b";
 
-    // System prompt: gpt-4o or deepResearch → DEEP_RESEARCH_PROMPT, others → SYSTEM_PROMPT
-    const useDeepPrompt = model === "gpt-4o" || deepResearch === true;
+    const modelInfo = CEREBRAS_MODELS[model];
+
+    // System prompt: deep model or deepResearch → DEEP_RESEARCH_PROMPT
+    const useDeepPrompt = modelInfo.isDeep || deepResearch === true;
     const systemPrompt = useDeepPrompt ? DEEP_RESEARCH_PROMPT : SYSTEM_PROMPT;
 
-    // Model-specific parameters
-    const modelConfig: Record<ValidModel, { max_tokens: number; temperature: number }> = {
-      "gpt-4o": { max_tokens: 4096, temperature: 0.3 },
-      "gpt-4o-mini": { max_tokens: 2048, temperature: 0.7 },
-      "gpt-3.5-turbo": { max_tokens: 1536, temperature: 0.8 },
-    };
-    const { max_tokens, temperature } = modelConfig[model];
+    const { max_tokens, temperature } = modelInfo;
 
     const apiMessages = [
       { role: "system" as const, content: systemPrompt },
@@ -89,8 +108,8 @@ export async function POST(req: NextRequest) {
       })),
     ];
 
-    // Call OpenAI API
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Call Cerebras API (OpenAI-compatible)
+    const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -103,29 +122,30 @@ export async function POST(req: NextRequest) {
         max_tokens,
         stream: true,
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(60000), // Cerebras is fast but allow 60s
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const rawMsg = errorData?.error?.message || `OpenAI API error: ${response.status}`;
-      console.error("OpenAI error:", rawMsg);
+      const rawMsg =
+        errorData?.error?.message || `Cerebras API error: ${response.status}`;
+      console.error("Cerebras error:", rawMsg);
 
-      // Map common OpenAI errors to user-friendly messages
+      // Map common errors to user-friendly messages
       let errorMsg = rawMsg;
       const msg = rawMsg.toLowerCase();
-      if (msg.includes("quota") || msg.includes("billing") || msg.includes("exceeded your current")) {
-        errorMsg = "OpenAI API quota exceeded. Please check your billing plan at platform.openai.com and add credits to continue using the chat.";
-      } else if (msg.includes("invalid api key") || msg.includes("incorrect api key") || msg.includes("authentication")) {
-        errorMsg = "Invalid OpenAI API key. Please update your OPENAI_API_KEY in the environment settings.";
+      if (msg.includes("quota") || msg.includes("billing") || msg.includes("exceeded")) {
+        errorMsg = "Cerebras API quota exceeded. Please check your plan at cloud.cerebras.ai and add credits.";
+      } else if (msg.includes("invalid api key") || msg.includes("unauthorized") || msg.includes("authentication")) {
+        errorMsg = "Invalid Cerebras API key. Please update your CEREBRAS_API_KEY in the environment settings.";
       } else if (msg.includes("rate limit") || msg.includes("too many requests")) {
-        errorMsg = "OpenAI rate limit reached. Please wait a moment and try again.";
+        errorMsg = "Cerebras rate limit reached. Please wait a moment and try again.";
       } else if (msg.includes("model") && msg.includes("not found")) {
         errorMsg = `The AI model '${model}' is not available. Please select a different model.`;
       } else if (msg.includes("context length") || msg.includes("maximum context")) {
         errorMsg = "Message too long for this model. Please start a new chat or shorten your message.";
       } else if (msg.includes("server error") || msg.includes("500") || msg.includes("502") || msg.includes("503")) {
-        errorMsg = "OpenAI servers are currently busy. Please try again in a few moments.";
+        errorMsg = "Cerebras servers are currently busy. Please try again in a few moments.";
       }
 
       return json({ error: errorMsg }, response.status);
