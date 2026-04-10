@@ -35,15 +35,20 @@ export default function HomePage() {
   const [mounted, setMounted] = useState(false);
   const [threeLoaded, setThreeLoaded] = useState(false);
 
-  // Check for saved session on mount
+  // Check hash on mount → if #admin, show admin panel
   useEffect(() => {
-    // Mark as mounted and check for saved session
     const checkSession = async () => {
       try {
+        // Check for #admin hash first
+        if (window.location.hash === "#admin") {
+          setView("admin");
+          setMounted(true);
+          return;
+        }
+
         const savedToken = localStorage.getItem("nextchat_token");
         const savedUser = localStorage.getItem("nextchat_user");
         if (savedToken && savedUser) {
-          // Verify token is still valid
           const res = await fetch("/api/auth/me", {
             headers: { Authorization: `Bearer ${savedToken}` },
           });
@@ -64,6 +69,17 @@ export default function HomePage() {
       }
     };
     checkSession();
+  }, []);
+
+  // Listen for hash changes
+  useEffect(() => {
+    const handleHash = () => {
+      if (window.location.hash === "#admin") {
+        setView("admin");
+      }
+    };
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
   }, []);
 
   // Handle login
@@ -102,6 +118,7 @@ export default function HomePage() {
 
   // Handle admin back
   const handleAdminBack = useCallback(() => {
+    window.location.hash = "";
     setView("landing");
   }, []);
 
@@ -127,7 +144,6 @@ export default function HomePage() {
                 className="w-full h-full"
                 style={{ position: "absolute", inset: 0 }}
               />
-              {/* Hide loader after scene mounts */}
               <iframe
                 title="three-loader"
                 style={{ display: "none" }}
@@ -174,25 +190,15 @@ export default function HomePage() {
                   Experience the future of chat with real-time AI responses, deep research mode, and beautiful 3D animations.
                 </p>
 
-                {/* CTA Buttons */}
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setView("auth")}
-                    className="px-8 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold rounded-2xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all duration-300 text-lg"
-                  >
-                    Get Started
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setView("admin")}
-                    className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white font-semibold rounded-2xl border border-white/20 hover:bg-white/20 transition-all duration-300 text-lg"
-                  >
-                    Admin Panel
-                  </motion.button>
-                </div>
+                {/* CTA Button */}
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setView("auth")}
+                  className="px-8 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold rounded-2xl shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 transition-all duration-300 text-lg"
+                >
+                  Get Started
+                </motion.button>
 
                 {/* Feature badges */}
                 <motion.div
@@ -201,7 +207,7 @@ export default function HomePage() {
                   transition={{ delay: 0.8, duration: 0.6 }}
                   className="flex flex-wrap justify-center gap-3 mt-12"
                 >
-                  {["AI Chat", "Deep Research", "Real-time", "Analytics"].map((feature, i) => (
+                  {["AI Chat", "Deep Research", "Real-time Streaming", "Analytics"].map((feature, i) => (
                     <span
                       key={i}
                       className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-sm text-white/70 text-xs border border-white/10"
@@ -274,7 +280,7 @@ export default function HomePage() {
           </motion.div>
         )}
 
-        {/* Admin View */}
+        {/* Admin View — only via #admin hash */}
         {view === "admin" && mounted && (
           <motion.div
             key="admin"
