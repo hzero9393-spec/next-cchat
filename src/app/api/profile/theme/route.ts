@@ -24,10 +24,16 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const validThemes = ["light", "dark", "system"];
+    const validThemes = [
+      "light", "dark", "system",
+      "ocean-blue", "forest-green", "sunset-orange",
+      "purple-haze", "midnight-black", "rose-pink",
+      "crimson-red", "teal-dream", "golden-hour",
+      "arctic-frost", "lavender", "emerald",
+    ];
     if (!validThemes.includes(theme)) {
       return NextResponse.json(
-        { error: "Invalid theme. Must be light, dark, or system" },
+        { error: "Invalid theme" },
         { status: 400 }
       );
     }

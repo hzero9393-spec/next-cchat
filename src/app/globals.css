@@ -197,3 +197,91 @@ html {
 iframe {
   max-width: 100%;
 }
+
+/* ===== THEME COLOR SCHEMES ===== */
+/* Each theme overrides --primary, --ring, --accent colors */
+/* Applied as data-theme attribute on <html> */
+
+[data-theme="ocean-blue"] {
+  --primary: oklch(0.62 0.17 230);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.62 0.17 230);
+  --sidebar-primary: oklch(0.62 0.17 230);
+}
+
+[data-theme="forest-green"] {
+  --primary: oklch(0.59 0.17 145);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.59 0.17 145);
+  --sidebar-primary: oklch(0.59 0.17 145);
+}
+
+[data-theme="sunset-orange"] {
+  --primary: oklch(0.67 0.19 45);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.67 0.19 45);
+  --sidebar-primary: oklch(0.67 0.19 45);
+}
+
+[data-theme="purple-haze"] {
+  --primary: oklch(0.59 0.22 290);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.59 0.22 290);
+  --sidebar-primary: oklch(0.59 0.22 290);
+}
+
+[data-theme="midnight-black"] {
+  --primary: oklch(0.35 0.02 260);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.35 0.02 260);
+  --sidebar-primary: oklch(0.45 0.03 260);
+}
+
+[data-theme="rose-pink"] {
+  --primary: oklch(0.6 0.2 350);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.6 0.2 350);
+  --sidebar-primary: oklch(0.6 0.2 350);
+}
+
+[data-theme="crimson-red"] {
+  --primary: oklch(0.55 0.22 25);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.55 0.22 25);
+  --sidebar-primary: oklch(0.55 0.22 25);
+}
+
+[data-theme="teal-dream"] {
+  --primary: oklch(0.62 0.12 180);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.62 0.12 180);
+  --sidebar-primary: oklch(0.62 0.12 180);
+}
+
+[data-theme="golden-hour"] {
+  --primary: oklch(0.75 0.18 85);
+  --primary-foreground: oklch(0.2 0.05 85);
+  --ring: oklch(0.75 0.18 85);
+  --sidebar-primary: oklch(0.75 0.18 85);
+}
+
+[data-theme="arctic-frost"] {
+  --primary: oklch(0.65 0.02 250);
+  --primary-foreground: oklch(0.15 0.02 250);
+  --ring: oklch(0.65 0.02 250);
+  --sidebar-primary: oklch(0.65 0.02 250);
+}
+
+[data-theme="lavender"] {
+  --primary: oklch(0.63 0.18 290);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.63 0.18 290);
+  --sidebar-primary: oklch(0.63 0.18 290);
+}
+
+[data-theme="emerald"] {
+  --primary: oklch(0.6 0.17 163);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.6 0.17 163);
+  --sidebar-primary: oklch(0.6 0.17 163);
+}

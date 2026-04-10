@@ -232,7 +232,7 @@ export function ProfileView({
         animate={{ y: 0, opacity: 1 }}
         className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60"
       >
-        <div className="max-w-2xl mx-auto flex items-center gap-3 px-4 sm:px-6 h-14">
+        <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 sm:px-6 lg:px-8 h-14">
           <Button
             variant="ghost"
             size="icon"
@@ -249,10 +249,10 @@ export function ProfileView({
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="max-w-2xl mx-auto p-4 sm:p-6 space-y-6"
+        className="max-w-3xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6"
       >
         {/* Profile Header */}
-        <motion.div variants={itemVariants} className="flex flex-col items-center py-4">
+        <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-center gap-4 py-4 sm:py-6">
           <Avatar className="h-20 w-20 shadow-lg mb-3">
             <AvatarImage src={user?.avatar_url} alt={user?.full_name} />
             <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-500 text-white text-2xl font-bold">
@@ -271,7 +271,7 @@ export function ProfileView({
               Personal Information
             </h3>
 
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Full Name */}
               <div>
                 <Label htmlFor="fullName" className="text-sm font-medium mb-1.5 block">
@@ -347,7 +347,7 @@ export function ProfileView({
                 <motion.div
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`flex items-center gap-2 p-3 rounded-xl text-sm ${
+                  className={`sm:col-span-2 flex items-center gap-2 p-3 rounded-xl text-sm ${
                     message.type === "success"
                       ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
                       : "bg-red-500/10 border border-red-500/20 text-red-500"
@@ -361,7 +361,7 @@ export function ProfileView({
               <Button
                 onClick={handleSave}
                 disabled={isLoading}
-                className="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-medium shadow-lg shadow-emerald-500/20 gap-2"
+                className="sm:col-span-2 w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white font-medium shadow-lg shadow-emerald-500/20 gap-2"
               >
                 {isLoading ? (
                   <>
@@ -394,7 +394,7 @@ export function ProfileView({
               </div>
             )}
 
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
               {themes.map((theme) => (
                 <ThemeCard
                   key={theme.id}
@@ -410,6 +410,7 @@ export function ProfileView({
         {/* Section 3 - Actions */}
         <motion.div variants={itemVariants}>
           <Card className="p-4 sm:p-6 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Logout */}
             <Button
               onClick={onLogout}
@@ -454,6 +455,7 @@ export function ProfileView({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            </div>
           </Card>
         </motion.div>
 

@@ -109,12 +109,38 @@ export default function HomePage() {
     setView("dashboard");
   }, []);
 
-  // Handle theme change
+  // Handle theme change — apply data-theme to document
   const handleThemeChange = useCallback((theme: string) => {
     if (user) {
       setUser({ ...user, theme_preference: theme });
     }
+    // Apply theme CSS variables to <html>
+    const validCustomThemes = [
+      "ocean-blue", "forest-green", "sunset-orange", "purple-haze",
+      "midnight-black", "rose-pink", "crimson-red", "teal-dream",
+      "golden-hour", "arctic-frost", "lavender", "emerald",
+    ];
+    if (validCustomThemes.includes(theme)) {
+      document.documentElement.setAttribute("data-theme", theme);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
   }, [user]);
+
+  // Apply saved theme on mount
+  useEffect(() => {
+    const savedTheme = user?.theme_preference;
+    if (savedTheme) {
+      const validCustomThemes = [
+        "ocean-blue", "forest-green", "sunset-orange", "purple-haze",
+        "midnight-black", "rose-pink", "crimson-red", "teal-dream",
+        "golden-hour", "arctic-frost", "lavender", "emerald",
+      ];
+      if (validCustomThemes.includes(savedTheme)) {
+        document.documentElement.setAttribute("data-theme", savedTheme);
+      }
+    }
+  }, [user?.theme_preference]);
 
   // Handle admin back
   const handleAdminBack = useCallback(() => {
