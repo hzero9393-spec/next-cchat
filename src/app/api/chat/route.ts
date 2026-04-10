@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     });
 
   try {
-    const { messages, deepResearch } = await req.json();
+    const { messages, deepResearch, model: requestedModel } = await req.json();
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return json({ error: "Messages required" }, 400);
     }
@@ -59,8 +59,27 @@ export async function POST(req: NextRequest) {
       return json({ error: "OpenAI API key not configured" }, 500);
     }
 
-    const systemPrompt = deepResearch ? DEEP_RESEARCH_PROMPT : SYSTEM_PROMPT;
-    const model = deepResearch ? "gpt-4o" : "gpt-4o-mini";
+    // Resolve model: explicit model param takes priority, then deepResearch fallback
+    const validModels = ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"] as const;
+    type ValidModel = (typeof validModels)[number];
+    const model: ValidModel =
+      requestedModel && validModels.includes(requestedModel)
+        ? (requestedModel as ValidModel)
+        : deepResearch
+          ? "gpt-4o"
+          : "gpt-4o-mini";
+
+    // System prompt: gpt-4o or deepResearch → DEEP_RESEARCH_PROMPT, others → SYSTEM_PROMPT
+    const useDeepPrompt = model === "gpt-4o" || deepResearch === true;
+    const systemPrompt = useDeepPrompt ? DEEP_RESEARCH_PROMPT : SYSTEM_PROMPT;
+
+    // Model-specific parameters
+    const modelConfig: Record<ValidModel, { max_tokens: number; temperature: number }> = {
+      "gpt-4o": { max_tokens: 4096, temperature: 0.3 },
+      "gpt-4o-mini": { max_tokens: 2048, temperature: 0.7 },
+      "gpt-3.5-turbo": { max_tokens: 1536, temperature: 0.8 },
+    };
+    const { max_tokens, temperature } = modelConfig[model];
 
     const apiMessages = [
       { role: "system" as const, content: systemPrompt },
@@ -80,8 +99,8 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model,
         messages: apiMessages,
-        temperature: deepResearch ? 0.3 : 0.7,
-        max_tokens: deepResearch ? 4096 : 2048,
+        temperature,
+        max_tokens,
         stream: true,
       }),
       signal: AbortSignal.timeout(30000),

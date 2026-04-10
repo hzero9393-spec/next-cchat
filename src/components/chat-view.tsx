@@ -18,6 +18,17 @@ import {
   RefreshCw,
   Brain,
   Sparkles,
+  Mic,
+  MicOff,
+  Paperclip,
+  ImageIcon,
+  Download,
+  Share2,
+  Volume2,
+  VolumeX,
+  X,
+  FileText,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +38,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useTTS } from "@/hooks/use-tts";
 
 // ============ TYPES ============
 
@@ -37,11 +70,38 @@ export interface Message {
   created_at: string;
 }
 
+interface AttachedFile {
+  name: string;
+  size: number;
+  type: string;
+  content_text: string;
+}
+
 export interface ChatViewProps {
   chatId: string;
   token: string;
-  deepResearch: boolean;
+  deepResearch?: boolean;
+  selectedModel?: string;
   onBack: () => void;
+  templatePrompt?: string;
+}
+
+const MODEL_LABELS: Record<string, string> = {
+  "gpt-4o": "Deep Research",
+  "gpt-4o-mini": "Fast",
+  "gpt-3.5-turbo": "Economy",
+};
+
+const MODEL_COLORS: Record<string, string> = {
+  "gpt-4o": "border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  "gpt-4o-mini": "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  "gpt-3.5-turbo": "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+};
+
+function resolveModel(props: ChatViewProps): string {
+  if (props.selectedModel) return props.selectedModel;
+  if (props.deepResearch) return "gpt-4o";
+  return "gpt-4o-mini";
 }
 
 // ============ COPY BUTTON ============
@@ -72,31 +132,101 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-// ============ MESSAGE COPY BUTTON ============
+// ============ MESSAGE ACTION BUTTONS ============
 
-function MessageCopyButton({ text }: { text: string }) {
+function MessageActionButtons({
+  message,
+  onRegenerate,
+  isLastAssistant,
+  isRegenerating,
+  onSpeak,
+  isSpeaking,
+  onExportMessage,
+}: {
+  message: Message;
+  onRegenerate?: () => void;
+  isLastAssistant?: boolean;
+  isRegenerating?: boolean;
+  onSpeak?: (text: string) => void;
+  isSpeaking?: boolean;
+  onExportMessage?: (msg: Message) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(message.content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // fallback
     }
   };
+
   return (
-    <button
-      onClick={handleCopy}
-      className="p-1 rounded-md hover:bg-accent transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-      title="Copy message"
-    >
-      {copied ? (
-        <Check className="w-3.5 h-3.5 text-green-500" />
-      ) : (
-        <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+    <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={handleCopy}
+            className="p-1 rounded-md hover:bg-accent transition-colors cursor-pointer"
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-green-500" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Copy</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => onSpeak?.(message.content)}
+            className="p-1 rounded-md hover:bg-accent transition-colors cursor-pointer"
+          >
+            {isSpeaking ? (
+              <VolumeX className="w-3.5 h-3.5 text-red-500" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-muted-foreground" />
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{isSpeaking ? "Stop" : "Read aloud"}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => onExportMessage?.(message)}
+            className="p-1 rounded-md hover:bg-accent transition-colors cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Export message</TooltipContent>
+      </Tooltip>
+
+      {isLastAssistant && onRegenerate && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onRegenerate}
+              disabled={isRegenerating}
+              className="p-1 rounded-md hover:bg-accent transition-colors cursor-pointer"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-muted-foreground ${
+                  isRegenerating ? "animate-spin" : ""
+                }`}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Regenerate</TooltipContent>
+        </Tooltip>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -107,11 +237,17 @@ function MessageBubble({
   onRegenerate,
   isLastAssistant,
   isRegenerating,
+  onSpeak,
+  isSpeaking,
+  onExportMessage,
 }: {
   message: Message;
   onRegenerate?: () => void;
   isLastAssistant?: boolean;
   isRegenerating?: boolean;
+  onSpeak?: (text: string) => void;
+  isSpeaking?: boolean;
+  onExportMessage?: (msg: Message) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -290,25 +426,17 @@ function MessageBubble({
           )}
         </div>
 
-        {/* Action buttons */}
+        {/* Action buttons for assistant messages */}
         {!isUser && (
-          <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <MessageCopyButton text={message.content} />
-            {isLastAssistant && onRegenerate && (
-              <button
-                onClick={onRegenerate}
-                disabled={isRegenerating}
-                className="p-1 rounded-md hover:bg-accent transition-colors cursor-pointer"
-                title="Regenerate response"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 text-muted-foreground ${
-                    isRegenerating ? "animate-spin" : ""
-                  }`}
-                />
-              </button>
-            )}
-          </div>
+          <MessageActionButtons
+            message={message}
+            onRegenerate={onRegenerate}
+            isLastAssistant={isLastAssistant}
+            isRegenerating={isRegenerating}
+            onSpeak={onSpeak}
+            isSpeaking={isSpeaking}
+            onExportMessage={onExportMessage}
+          />
         )}
       </div>
     </motion.div>
@@ -364,8 +492,13 @@ export function ChatView({
   chatId,
   token,
   deepResearch,
+  selectedModel,
   onBack,
+  templatePrompt,
 }: ChatViewProps) {
+  const model = resolveModel({ chatId, token, deepResearch, selectedModel, onBack, templatePrompt });
+
+  // ---- State ----
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -373,11 +506,30 @@ export function ChatView({
   const [isFetchingMessages, setIsFetchingMessages] = useState(true);
   const [error, setError] = useState("");
 
+  // File upload state
+  const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Share dialog state
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+
+  // Template pre-fill sentinel
+  const templateSentRef = useRef(false);
+
+  // ---- Refs ----
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Fetch messages on mount
+  // ---- Hooks ----
+  const speech = useSpeechRecognition();
+  const tts = useTTS();
+
+  // ============ FETCH MESSAGES ============
+
   useEffect(() => {
     const fetchMessages = async () => {
       setIsFetchingMessages(true);
@@ -397,7 +549,25 @@ export function ChatView({
     fetchMessages();
   }, [chatId, token]);
 
-  // Auto-scroll
+  // ============ TEMPLATE PRE-FILL ============
+
+  useEffect(() => {
+    if (
+      templatePrompt &&
+      !templateSentRef.current &&
+      !isFetchingMessages
+    ) {
+      templateSentRef.current = true;
+      // Small delay so the user can see messages loading first
+      const timer = setTimeout(() => {
+        sendMessage(templatePrompt);
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [isFetchingMessages]);
+
+  // ============ AUTO-SCROLL ============
+
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
@@ -406,17 +576,40 @@ export function ChatView({
     scrollToBottom();
   }, [messages, isLoading, scrollToBottom]);
 
-  // Send message
+  // ============ TTS AUTO-SPEAK ============
+
+  const prevAssistantCountRef = useRef(0);
+  useEffect(() => {
+    const assistantCount = messages.filter((m) => m.role === "assistant").length;
+    if (tts.isTTSEnabled && assistantCount > prevAssistantCountRef.current && !isLoading) {
+      const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+      if (lastAssistant && lastAssistant.content) {
+        tts.speak(lastAssistant.content);
+      }
+    }
+    prevAssistantCountRef.current = assistantCount;
+  }, [messages.length, isLoading, tts.isTTSEnabled]);
+
+  // ============ SEND MESSAGE ============
+
   const sendMessage = useCallback(
     async (messageText?: string) => {
-      const content = messageText || input.trim();
-      if (!content || isLoading) return;
+      const rawContent = messageText || input.trim();
+      if (!rawContent || isLoading) return;
+
+      // Build the actual content with file attachment context if present
+      let content = rawContent;
+      const fileForMessage = attachedFile;
+      if (fileForMessage) {
+        content = `Based on the attached file [${fileForMessage.name}]:\n\n${fileForMessage.content_text}\n\nUser question: ${rawContent}`;
+        setAttachedFile(null);
+      }
 
       // Optimistically add user message
       const userMsg: Message = {
         id: `temp-${Date.now()}`,
         role: "user",
-        content,
+        content: rawContent, // Show original text in UI
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -448,7 +641,11 @@ export function ChatView({
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: allMessages, deepResearch }),
+          body: JSON.stringify({
+            messages: allMessages,
+            deepResearch: model === "gpt-4o",
+            model,
+          }),
           signal: abortRef.current.signal,
         });
 
@@ -544,12 +741,12 @@ export function ChatView({
         abortRef.current = null;
       }
     },
-    [input, isLoading, messages, chatId, token]
+    [input, isLoading, messages, chatId, token, model, attachedFile]
   );
 
-  // Regenerate last AI message
+  // ============ REGENERATE ============
+
   const handleRegenerate = useCallback(async () => {
-    // Find last user message
     const lastUserIdx = [...messages]
       .reverse()
       .findIndex((m) => m.role === "user");
@@ -577,7 +774,11 @@ export function ChatView({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: chatHistory, deepResearch }),
+        body: JSON.stringify({
+          messages: chatHistory,
+          deepResearch: model === "gpt-4o",
+          model,
+        }),
       });
 
       if (!res.ok) {
@@ -648,7 +849,189 @@ export function ChatView({
     } finally {
       setIsRegenerating(false);
     }
-  }, [messages, chatId, token]);
+  }, [messages, chatId, token, model]);
+
+  // ============ FILE UPLOAD ============
+
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (file.size > 5 * 1024 * 1024) {
+        setError("File too large. Maximum size is 5MB.");
+        return;
+      }
+
+      const allowedExts = [".pdf", ".txt", ".md", ".csv", ".json"];
+      const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+      if (!allowedExts.includes(ext)) {
+        setError("Unsupported file type. Allowed: .pdf, .txt, .md, .csv, .json");
+        return;
+      }
+
+      setIsUploadingFile(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch("/api/files", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Upload failed");
+        }
+
+        const data = await res.json();
+        setAttachedFile({
+          name: data.file.filename,
+          size: data.file.file_size,
+          type: data.file.file_type,
+          content_text: data.file.content_text,
+        });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Failed to upload file";
+        setError(errMsg);
+      } finally {
+        setIsUploadingFile(false);
+        // Reset the file input
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [token]
+  );
+
+  const removeAttachedFile = useCallback(() => {
+    setAttachedFile(null);
+  }, []);
+
+  // ============ EXPORT CHAT ============
+
+  const handleExportChat = useCallback(
+    async (format: "md" | "txt") => {
+      try {
+        const res = await fetch(
+          `/api/chats/${chatId}/export?format=${format}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) throw new Error("Export failed");
+
+        const blob = await res.blob();
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const filename = `chat-${chatId}-${dateStr}.${format}`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch {
+        setError("Failed to export chat");
+      }
+    },
+    [chatId, token]
+  );
+
+  // ============ EXPORT SINGLE MESSAGE ============
+
+  const handleExportMessage = useCallback((msg: Message) => {
+    const text = `[${msg.role === "user" ? "You" : "AI Assistant"}] (${msg.created_at})\n\n${msg.content}`;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `message-${msg.id.slice(0, 8)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  // ============ SHARE CHAT ============
+
+  const handleShareChat = useCallback(async () => {
+    setShareLoading(true);
+    setShareDialogOpen(true);
+    try {
+      const res = await fetch(`/api/chats/${chatId}/share`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Share failed");
+      }
+      const data = await res.json();
+      setShareUrl(data.url || `/shared/${data.slug}`);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to share";
+      setError(errMsg);
+      setShareDialogOpen(false);
+    } finally {
+      setShareLoading(false);
+    }
+  }, [chatId, token]);
+
+  const copyShareUrl = useCallback(() => {
+    const fullUrl = `${window.location.origin}${shareUrl}`;
+    navigator.clipboard.writeText(fullUrl).catch(() => {});
+  }, [shareUrl]);
+
+  // ============ VOICE INPUT ============
+
+  const handleMicClick = useCallback(() => {
+    if (speech.isListening) {
+      speech.stopListening();
+      // Fill input with transcript when stopping
+      if (speech.transcript) {
+        setInput((prev) => prev + (prev ? " " : "") + speech.transcript);
+      }
+    } else {
+      speech.startListening();
+    }
+  }, [speech]);
+
+  // When speech recognition ends, fill the textarea
+  useEffect(() => {
+    if (!speech.isListening && speech.transcript) {
+      setInput((prev) => {
+        // Avoid duplicating if already filled
+        if (prev.includes(speech.transcript)) return prev;
+        return prev + (prev ? " " : "") + speech.transcript;
+      });
+    }
+  }, [speech.isListening, speech.transcript]);
+
+  // ============ TTS SPEAK ============
+
+  const handleSpeakMessage = useCallback(
+    (text: string) => {
+      if (tts.isSpeaking) {
+        tts.stop();
+      } else {
+        tts.speak(text);
+      }
+    },
+    [tts]
+  );
+
+  // ============ IMAGE GENERATION ============
+
+  const handleImageGen = useCallback(() => {
+    const prompt = "Generate an image: ";
+    setInput((prev) => prev + prompt);
+    textareaRef.current?.focus();
+  }, []);
+
+  // ============ KEYBOARD HANDLER ============
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -670,22 +1053,29 @@ export function ChatView({
     []
   );
 
-  // Find last assistant message for regenerate button
+  // ============ DERIVED VALUES ============
+
   const lastAssistantIdx = [...messages].reverse().findIndex((m) => m.role === "assistant");
   const lastAssistantMessage =
     lastAssistantIdx >= 0
       ? messages[messages.length - 1 - lastAssistantIdx]
       : null;
 
+  const modelLabel = MODEL_LABELS[model] || model;
+  const modelColor = MODEL_COLORS[model] || MODEL_COLORS["gpt-4o-mini"];
+
+  // ============ RENDER ============
+
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header */}
+      {/* ============ HEADER ============ */}
       <motion.header
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60"
       >
         <div className="flex items-center justify-between px-4 h-14">
+          {/* Left section */}
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -705,19 +1095,89 @@ export function ChatView({
             </div>
           </div>
 
-          {deepResearch && (
+          {/* Right section - actions */}
+          <div className="flex items-center gap-1">
+            {/* Model badge */}
             <Badge
               variant="outline"
-              className="shrink-0 border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400 gap-1"
+              className={`shrink-0 gap-1 text-[11px] ${modelColor}`}
             >
-              <Brain className="w-3 h-3" />
-              Deep Research
+              {model === "gpt-4o" ? (
+                <Brain className="w-3 h-3" />
+              ) : (
+                <Sparkles className="w-3 h-3" />
+              )}
+              {modelLabel}
             </Badge>
-          )}
+
+            {/* TTS Toggle */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={tts.toggleTTS}
+                  className={`h-9 w-9 shrink-0 ${tts.isTTSEnabled ? "text-emerald-600" : ""}`}
+                >
+                  {tts.isTTSEnabled ? (
+                    <Volume2 className="w-4 h-4" />
+                  ) : (
+                    <VolumeX className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {tts.isTTSEnabled ? "Disable TTS" : "Enable TTS"}
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Export dropdown */}
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0"
+                    >
+                      <Download className="w-4 h-4 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Export chat</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" sideOffset={4}>
+                <DropdownMenuItem onClick={() => handleExportChat("md")}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Export as Markdown
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExportChat("txt")}>
+                  <MessageSquare className="w-4 h-4 mr-2" />
+                  Export as TXT
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Share button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleShareChat}
+                  className="h-9 w-9 shrink-0"
+                >
+                  <Share2 className="w-4 h-4 text-muted-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Share chat</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </motion.header>
 
-      {/* Messages Area */}
+      {/* ============ MESSAGES AREA ============ */}
       <main className="flex-1 overflow-y-auto">
         {isFetchingMessages ? (
           <div className="flex items-center justify-center h-full">
@@ -736,7 +1196,7 @@ export function ChatView({
                 Start a conversation
               </h2>
               <p className="text-sm text-muted-foreground max-w-sm">
-                {deepResearch
+                {model === "gpt-4o"
                   ? "Deep Research mode is on. Ask complex questions for thorough analysis."
                   : "Type a message below to start chatting with ZAI Assistant."}
               </p>
@@ -751,6 +1211,9 @@ export function ChatView({
                 onRegenerate={handleRegenerate}
                 isLastAssistant={message.id === lastAssistantMessage?.id}
                 isRegenerating={isRegenerating}
+                onSpeak={handleSpeakMessage}
+                isSpeaking={tts.isSpeaking && tts.isTTSEnabled}
+                onExportMessage={handleExportMessage}
               />
             ))}
             {isLoading && <TypingIndicator />}
@@ -770,7 +1233,7 @@ export function ChatView({
         )}
       </main>
 
-      {/* Input Area */}
+      {/* ============ INPUT AREA ============ */}
       <motion.footer
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -778,6 +1241,65 @@ export function ChatView({
         className="sticky bottom-0 border-t border-border/50 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 z-30"
       >
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+          {/* Voice input transcript preview */}
+          <AnimatePresence>
+            {speech.isListening && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <motion.div
+                    animate={{ scale: [1, 1.3, 1] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    className="w-2.5 h-2.5 rounded-full bg-red-500"
+                  />
+                  <span className="text-xs text-red-500 font-medium">
+                    Listening...
+                  </span>
+                  {speech.transcript && (
+                    <span className="text-xs text-muted-foreground truncate">
+                      {speech.transcript}
+                    </span>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Attached file chip */}
+          <AnimatePresence>
+            {attachedFile && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden mb-2"
+              >
+                <div className="flex items-center gap-2 px-1">
+                  <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5 text-sm border border-border/50">
+                    <FileText className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span className="truncate max-w-[200px] text-muted-foreground">
+                      {attachedFile.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground/60">
+                      ({(attachedFile.size / 1024).toFixed(1)}KB)
+                    </span>
+                    <button
+                      onClick={removeAttachedFile}
+                      className="p-0.5 rounded hover:bg-accent transition-colors cursor-pointer shrink-0"
+                    >
+                      <X className="w-3 h-3 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Input controls row */}
           <div className="flex items-end gap-2">
             <div className="flex-1 relative">
               <Textarea
@@ -786,7 +1308,7 @@ export function ChatView({
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  deepResearch
+                  model === "gpt-4o"
                     ? "Ask a complex question for deep research..."
                     : "Type your message..."
                 }
@@ -795,6 +1317,81 @@ export function ChatView({
                 disabled={isLoading}
               />
             </div>
+
+            {/* Microphone button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleMicClick}
+                  disabled={!speech.isSupported || isUploadingFile}
+                  className={`h-11 w-11 rounded-xl shrink-0 transition-all duration-200 ${
+                    speech.isListening
+                      ? "bg-red-500/15 text-red-500 hover:bg-red-500/25 hover:text-red-500"
+                      : "bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                >
+                  {speech.isListening ? (
+                    <MicOff className="h-4 w-4" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {speech.isListening ? "Stop listening" : "Voice input"}
+              </TooltipContent>
+            </Tooltip>
+
+            {/* File upload button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading || isUploadingFile}
+                  className="h-11 w-11 rounded-xl bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 transition-all duration-200"
+                >
+                  {isUploadingFile ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Paperclip className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Attach file</TooltipContent>
+            </Tooltip>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt,.md,.csv,.json"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+
+            {/* Image generation button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleImageGen}
+                  disabled={isLoading}
+                  className="h-11 w-11 rounded-xl bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-accent shrink-0 transition-all duration-200"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Image generation (DALL·E API key required)
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Send button */}
             <Button
               onClick={() => sendMessage()}
               disabled={!input.trim() || isLoading}
@@ -808,11 +1405,60 @@ export function ChatView({
               )}
             </Button>
           </div>
+
           <p className="text-[11px] text-muted-foreground/60 mt-2 px-1">
             Press Enter to send, Shift+Enter for new line
+            {speech.isSupported && " · Mic for voice input"}
+            {" · "}Supports .pdf, .txt, .md, .csv, .json
           </p>
         </div>
       </motion.footer>
+
+      {/* ============ SHARE DIALOG ============ */}
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share Chat</DialogTitle>
+            <DialogDescription>
+              Anyone with the link can view this conversation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {shareLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+              </div>
+            ) : shareUrl ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground truncate">
+                    {window.location.origin}{shareUrl}
+                  </div>
+                  <Button
+                    onClick={copyShareUrl}
+                    size="sm"
+                    className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-1.5" />
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This chat is now publicly accessible via the link above.
+                </p>
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShareDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

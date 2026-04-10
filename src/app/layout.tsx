@@ -32,6 +32,12 @@ export const metadata: Metadata = {
   icons: {
     icon: "/chatbot-avatar.png",
   },
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "NextChat",
+  },
   openGraph: {
     title: "NextChat — AI-Powered Conversations",
     description:
@@ -56,6 +62,17 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                if ('serviceWorker' in navigator) {
+                  window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('/sw.js');
+                  });
+                }
+              `,
+            }}
+          />
           {children}
           <Toaster />
         </ThemeProvider>
