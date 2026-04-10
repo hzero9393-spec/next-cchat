@@ -80,7 +80,8 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.CEREBRAS_API_KEY;
     if (!apiKey) {
-      return json({ error: "Cerebras API key not configured" }, 500);
+      console.error("CEREBRAS_API_KEY not found. Available env vars:", Object.keys(process.env).filter(k => k.includes('CERE') || k.includes('API') || k.includes('KEY')).join(', '));
+      return json({ error: "Cerebras API key not configured. Please add CEREBRAS_API_KEY to your environment variables." }, 500);
     }
 
     // Resolve model: explicit model param takes priority, then deepResearch fallback
